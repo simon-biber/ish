@@ -199,6 +199,8 @@ dword_t sys_close(fd_t f) {
 #define F_SETFD_ 2
 #define F_GETFL_ 3
 #define F_SETFL_ 4
+#define F_SETOWN 8
+#define F_GETOWN 9
 
 dword_t sys_dup(fd_t f) {
     struct fd *fd = f_get(f);
@@ -258,6 +260,9 @@ dword_t sys_fcntl64(fd_t f, dword_t cmd, dword_t arg) {
                 return 0;
             }
             return fd->ops->setflags(fd, arg);
+        case F_SETOWN:
+            STRACE("fcntl(%d, F_SETOWN)", f);
+            return 0;
 
         default:
             STRACE("fcntl(%d, %d)", f, cmd);

@@ -323,7 +323,39 @@ out:
     return res;
 }
 
+dword_t sys_pwrite(fd_t f, addr_t buf_addr, dword_t size, off_t_ off) {
+    STRACE("pwrite(%d, 0x%x, %d, %d)", f, buf_addr, size, off);
+    struct fd *fd = f_get(f);
+    if (fd == NULL)
+        return _EBADF;
+    char *buf = malloc(size+1);
+    if (buf == NULL)
+        return _EFAULT;
+    lock(&fd->lock);
+    int_t res = fd->ops->lseek(fd, off, LSEEK_SET);
+    if (res < 0)
+        goto out;
+    if (user_read(buf_addr, buf, res)) {
+        res = _EFAULT;
+        goto out;
+    }
+    res = fd->ops->write(fd, buf, size);
+out:
+    unlock(&fd->lock);
+    free(buf);
+    return res;
+}
+
 static int fd_ioctl(struct fd *fd, dword_t cmd, dword_t arg) {
+    if (cmd == 21586) {
+        printk("ioctl(FIOASYNC) stubbed\n");
+        return 0;
+    }
+    if (cmd == 21523) {
+        printk("ioctl(21523) stubbed\n");
+        return 0;
+    }
+
     if (!fd->ops->ioctl_size)
         return _EINVAL;
     ssize_t size = fd->ops->ioctl_size(fd, cmd);
@@ -669,10 +701,71 @@ dword_t sys_fsync(fd_t f) {
 
 // a few stubs
 dword_t sys_sendfile(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t count) {
-    return _EINVAL;
+    STRACE("sendfile(%d, %d, 0x%x, %d)", out_fd, in_fd, offset_addr, count);
+    struct fd *fd_in = f_get(in_fd);
+    if (fd_in == NULL)
+        return _EBADF;
+    struct fd *fd_out = f_get(out_fd);
+    if (fd_out == NULL)
+        return _EBADF;
+    char *buf = malloc(count+1);
+    if (buf == NULL)
+        return _EFAULT;
+    lock(&fd_in->lock);
+    lock(&fd_out->lock);
+    // TODO: check how to handle offset_addr to seek in fd_in
+    //int_t res = fd->ops->lseek(fd, off, LSEEK_SET);
+    //if (res < 0)
+    //    goto out;
+    int_t res = fd_in->ops->read(fd_in, buf, count);
+    if (res >= 0) {
+        res = fd_out->ops->write(fd_out, buf, count);
+    }
+out:
+    unlock(&fd_out->lock);
+    unlock(&fd_in->lock);
+    free(buf);
+    return res;
 }
+
 dword_t sys_sendfile64(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t count) {
-    return _EINVAL;
+
+    // only implement for small transfers, big 16M calls on startup are making iSH terminate
+    if (count > 1024) return _EINVAL;
+    
+    STRACE("sendfile64(%d, %d, 0x%x, %d)", out_fd, in_fd, offset_addr, count);
+    struct fd *fd_in = f_get(in_fd);
+    if (fd_in == NULL)
+        return _EBADF;
+    struct fd *fd_out = f_get(out_fd);
+    if (fd_out == NULL)
+        return _EBADF;
+    char *buf = malloc(count+1);
+    if (buf == NULL)
+        return _EFAULT;
+    lock(&fd_in->lock);
+    lock(&fd_out->lock);
+
+    int_t res;
+    if (offset_addr) {
+        dword_t offset;
+        if (user_read(offset_addr, &offset, sizeof offset)) {
+            res = _EFAULT;
+            goto out;
+        }
+        res = fd_in->ops->lseek(fd_in, offset, LSEEK_SET);
+        if (res < 0)
+            goto out;
+    }
+    res = fd_in->ops->read(fd_in, buf, count);
+    if (res >= 0) {
+        res = fd_out->ops->write(fd_out, buf, count);
+    }
+out:
+    unlock(&fd_out->lock);
+    unlock(&fd_in->lock);
+    free(buf);
+    return res;
 }
 dword_t sys_copy_file_range(fd_t in_fd, addr_t in_off, fd_t out_fd, addr_t out_off, dword_t len, uint_t flags) {
     return _EPERM; // good enough for ruby

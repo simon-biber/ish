@@ -19,10 +19,10 @@ static addr_t do_mmap(addr_t addr, dword_t len, dword_t prot, dword_t flags, fd_
         page = PAGE(addr);
     }
     if (flags & MMAP_ANONYMOUS) {
-        if (!(flags & MMAP_PRIVATE)) {
-            TODO("MMAP_SHARED");
-            return _EINVAL;
-        }
+        //if (!(flags & MMAP_PRIVATE)) {
+        //    TODO("MMAP_SHARED");
+        //    return _EINVAL;
+        //}
         if ((err = pt_map_nothing(current->mem, page, pages, prot)) < 0)
             return err;
     } else {

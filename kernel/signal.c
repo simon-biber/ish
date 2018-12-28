@@ -330,6 +330,20 @@ dword_t sys_rt_sigprocmask(dword_t how, addr_t set_addr, addr_t oldset_addr, dwo
     return 0;
 }
 
+dword_t sys_rt_sigsuspend(addr_t set_addr, dword_t size) {
+    if (size != sizeof(sigset_t_))
+        return _EINVAL;
+
+    sigset_t_ set, oldset;
+    if (user_get(set_addr, set))
+        return _EFAULT;
+    STRACE("rt_sigsuspend(0x%llx, %d)", (long long) set, size);
+
+    // TODO: implement sigsuspend
+
+    return 0;
+}
+
 dword_t sys_sigaltstack(addr_t ss_addr, addr_t old_ss_addr) {
     STRACE("sigaltstack(0x%x, 0x%x)", ss_addr, old_ss_addr);
     struct sighand *sighand = current->sighand;

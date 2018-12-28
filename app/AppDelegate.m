@@ -26,7 +26,7 @@ static void ios_handle_exit(int code) {
 
 - (int)startThings {
     NSFileManager *manager = [NSFileManager defaultManager];
-    NSURL *container = [manager containerURLForSecurityApplicationGroupIdentifier:@"group.app.ish.iSH"];
+    NSURL *container = [manager containerURLForSecurityApplicationGroupIdentifier:@"group.net.srkb.group.iSH"];
     NSURL *alpineRoot = [container URLByAppendingPathComponent:@"roots/alpine"];
     [manager createDirectoryAtURL:[container URLByAppendingPathComponent:@"roots"]
       withIntermediateDirectories:YES
