@@ -702,6 +702,10 @@ dword_t sys_fsync(fd_t f) {
 // a few stubs
 dword_t sys_sendfile(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t count) {
     STRACE("sendfile(%d, %d, 0x%x, %d)", out_fd, in_fd, offset_addr, count);
+
+    // Do the requested transfer in small blocks to avoid memory problems
+    if (count > 1024) count = 1024;
+    
     struct fd *fd_in = f_get(in_fd);
     if (fd_in == NULL)
         return _EBADF;
@@ -713,13 +717,28 @@ dword_t sys_sendfile(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t count)
         return _EFAULT;
     lock(&fd_in->lock);
     lock(&fd_out->lock);
-    // TODO: check how to handle offset_addr to seek in fd_in
-    //int_t res = fd->ops->lseek(fd, off, LSEEK_SET);
-    //if (res < 0)
-    //    goto out;
-    int_t res = fd_in->ops->read(fd_in, buf, count);
+    int_t res;
+    dword_t offset;  // sendfile offset is 32-bit
+    if (offset_addr) {
+        if (user_read(offset_addr, &offset, sizeof offset)) {
+            res = _EFAULT;
+            goto out;
+        }
+        res = fd_in->ops->lseek(fd_in, offset, LSEEK_SET);
+        if (res < 0)
+            goto out;
+    }
+    res = fd_in->ops->read(fd_in, buf, count);
     if (res >= 0) {
-        res = fd_out->ops->write(fd_out, buf, count);
+        // Only write as many bytes as we read in: the rest of the buffer is garbage.
+        res = fd_out->ops->write(fd_out, buf, res);
+        if (res >= 0 && offset_addr) {
+            // Write back the new offset to user memory.
+            offset += res;
+            if (user_write(offset_addr, &offset, sizeof offset)) {
+                res = _EFAULT;
+            }
+        }
     }
 out:
     unlock(&fd_out->lock);
@@ -729,11 +748,11 @@ out:
 }
 
 dword_t sys_sendfile64(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t count) {
-
-    // only implement for small transfers, big 16M calls on startup are making iSH terminate
-    if (count > 1024) return _EINVAL;
-    
     STRACE("sendfile64(%d, %d, 0x%x, %d)", out_fd, in_fd, offset_addr, count);
+
+    // Do the requested transfer in small blocks to avoid memory problems
+    if (count > 1024) count = 1024;
+    
     struct fd *fd_in = f_get(in_fd);
     if (fd_in == NULL)
         return _EBADF;
@@ -747,8 +766,8 @@ dword_t sys_sendfile64(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t coun
     lock(&fd_out->lock);
 
     int_t res;
+    off_t_ offset;  // sendfile64 offset is 64-bit
     if (offset_addr) {
-        dword_t offset;
         if (user_read(offset_addr, &offset, sizeof offset)) {
             res = _EFAULT;
             goto out;
@@ -759,7 +778,15 @@ dword_t sys_sendfile64(fd_t out_fd, fd_t in_fd, addr_t offset_addr, dword_t coun
     }
     res = fd_in->ops->read(fd_in, buf, count);
     if (res >= 0) {
-        res = fd_out->ops->write(fd_out, buf, count);
+        // Only write as many bytes as we read in: the rest of the buffer is garbage.
+        res = fd_out->ops->write(fd_out, buf, res);
+        if (res >= 0 && offset_addr) {
+            // Write back the new offset to user memory.
+            offset += res;
+            if (user_write(offset_addr, &offset, sizeof offset)) {
+                res = _EFAULT;
+            }
+        }
     }
 out:
     unlock(&fd_out->lock);
